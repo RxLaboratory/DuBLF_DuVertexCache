@@ -135,6 +135,9 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
             self.report({'ERROR'}, 'Cannot create directory for Vertex Cache at "' + cache_dir + '"')
             print('Cannot create directory for Vertex Cache at "' + cache_dir + '"')
             return {'CANCELLED'}
+
+        # List armatures used by cached objects
+        armatures = []
         
         for obj in objs:
             if not obj.type in {'MESH', 'CURVE', 'SURFACE', 'FONT'}:
@@ -236,7 +239,18 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
 
             print(obj.name + " is cached!")
 
-        # keep track of armatures if any, check if they're still used, and if not remove them from the scene (both proxies and then originals if settings tells to remove linked armatures)
+        # remove all unused armatures
+        for armature in bpy.data.armatures:
+            remove = True
+            for obj in bpy.data.objects:
+                test = obj.find_armature()
+                if test is None:
+                    continue
+                if test.name == armature.name:
+                    remove = False
+                    break
+            if remove:
+                bpy.data.armatures.remove(armature)
 
         # add Mesh Cache modifier on all objects, move at first position on the stack (above remaining subdivs)
         return {'FINISHED'}
