@@ -61,9 +61,30 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
                ('10', '10', ''),
                ),
         default='1',)
+    make_unique_data: bpy.props.BoolProperty(
+        name="Make single-user data when needed",
+        description="When applying non deform modifiers (which change vertex count), make single data if it is multi-user, or ignore this object",
+        default=False
+    )
     apply_subsurf: bpy.props.BoolProperty(
         name="Apply Subdivision Surface",
         description="Applies the subdivision before exporting cache, instead of keeping the modifier",
+        default = False )
+    linked_object: bpy.props.EnumProperty(
+        name="Linked Objects",
+        description="What to do with linked objects",
+        items=(
+            ('IGNORE', "Ignore", "Ignore objects"),
+            ('MAKE_LOCAL', "Make Local", "Make objects local. They will be unlinked"),
+        ),
+        default = 'MAKE_LOCAL' )
+    remove_armatures: bpy.props.BoolProperty(
+        name="Remove unused Armatures",
+        description="After caching, remove all Armatures which are not used anymore",
+        default = True )
+    export_only: bpy.props.BoolProperty(
+        name="Export only",
+        description="Just exports the point caches, and don't add the Mesh Cache modifier",
         default = False )
 
     @classmethod
@@ -84,8 +105,12 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
         lay = self.layout
         col = lay.column()
         col.prop(self, 'world_space')
+        col.prop(self, 'remove_armatures')
         col.prop(self, 'apply_subsurf')
+        col.prop(self, 'make_unique_data')
+        col.prop(self, 'linked_object')
         col.prop(self, 'sampling')
+        col.prop(self, 'export_only')
 
     def execute( self, context ):
         print("\n___VERTEX CACHE___")
@@ -107,6 +132,7 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
             cache_dirObj.mkdir(parents = True, exist_ok=True)
             # print('Vertex Cache will be saved in "' + cache_dir + '"')
         except:
+            self.report({'ERROR'}, 'Cannot create directory for Vertex Cache at "' + cache_dir + '"')
             print('Cannot create directory for Vertex Cache at "' + cache_dir + '"')
             return {'CANCELLED'}
         
@@ -118,7 +144,37 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
             context_override['selected_objects'] = [obj]
             context_override['active_object'] = obj
             context_override['object'] = obj
-            
+
+            saved_data = None
+
+            # make local
+            if not self.export_only or self.apply_subsurf:
+                # Make override/local/ignore for object
+                if obj.library is not None:
+                    if self.linked_object == 'MAKE_LOCAL':
+                        obj = obj.make_local()
+                        print(obj.name + " Was Made Local")
+                    else:
+                        continue
+
+            # If data is linked and trying to apply non-deformers, will not work: let's make a local copy of the data
+            if obj.data.library is not None and dublf.modifiers.has_non_deform_modifiers(obj):
+                if self.linked_object == 'MAKE_LOCAL':
+                    obj.data = obj.data.make_local()
+                else:
+                    self.report({'INFO'}, obj.name + " ignored because it is linked.")
+                    print(obj.name + " ignored because it is linked.")
+                    continue
+
+            # If data is still multi user and trying to apply non-deformers, will not work: let's make a copy of the data
+            if obj.data.users > 1 and dublf.modifiers.has_non_deform_modifiers(obj):
+                if self.make_unique_data:
+                    obj.data = obj.data.copy()
+                else:
+                    self.report({'INFO'}, obj.name + " ignored because it has multi-user data.")
+                    print(obj.name + " ignored because it has multi-user-data.")
+                    continue
+
             print('Caching ' + context_override['active_object'].name)
             print(context_override['selected_objects'])
 
@@ -128,11 +184,12 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
             # save and remove subdivision
             subsurfs = []
             if not self.apply_subsurf:
-                subsurfs = dublf.modifiers.collect_modifiers( obj, modifier_type = 'SUBSURF', remove = True )
-        
+                subsurfs = dublf.modifiers.collect_modifiers( obj, modifier_type = 'SUBSURF', post = 'REMOVE' )
+
             # Export Cache
             if not bpy.ops.export_shape.pc2.poll(context_override):
-                print('Cannot export to Point Cache (pc2) file.')
+                print('Cannot export this type of object to Point Cache (pc2) file.')
+                self.report({'ERROR'}, 'Cannot export this type of object to Point Cache (pc2) file.')
                 return {'CANCELLED'}
             bpy.ops.export_shape.pc2(
                 context_override,
@@ -144,24 +201,26 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
                 sampling = self.sampling,
                 filepath = pc2_file)
 
-            # apply all modifiers to object(s) 
-            # We need to apply and not just remove to keep vertex count.
-            # They will be overriden by the mesh cache anyway
-            bpy.ops.object.modifiers_apply_all(context_override, apply_as='DATA') # This operator is registered by DuBLF
-            
-            # remove animation if world space only (for now)
-            if (self.world_space):
-                dublf.animation.remove_keyframes_from_object( obj )
+            if not self.export_only:
+                # apply all modifiers to object(s) 
+                # We need to apply and not just remove to keep vertex count.
+                # They will be overriden by the mesh cache anyway
+                if dublf.modifiers.has_non_deform_modifiers(obj):
+                    bpy.ops.object.modifiers_apply_all(context_override, apply_as='DATA') # This operator is registered by DuBLF
+                # remove
+                else:
+                    dublf.modifiers.remove_all_modifiers(obj)
+                
+                # remove animation if world space only (for now)
+                if (self.world_space):
+                    dublf.animation.remove_keyframes_from_object( obj )
+                    obj.parent = None
+                    dublf.animation.reset_transform(obj)                   
 
-            # if world space, unparent and reset object transform
-            if (self.world_space):
-                obj.parent = None
-                dublf.animation.reset_transform(obj)
-
-            # add Mesh Cache
-            cacheMod = obj.modifiers.new("Mesh Cache (DuVertexCache)", 'MESH_CACHE')
-            cacheMod.cache_format = 'PC2'
-            cacheMod.filepath = pc2_file
+                # add Mesh Cache
+                cacheMod = obj.modifiers.new("Mesh Cache (DuVertexCache)", 'MESH_CACHE')
+                cacheMod.cache_format = 'PC2'
+                cacheMod.filepath = pc2_file
 
             # restore subsurfs
             if not self.apply_subsurf:
@@ -173,7 +232,7 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
                     subsurfMod.quality = subsurf['quality']
                     subsurfMod.uv_smooth = subsurf['uv_smooth']
                     subsurfMod.show_only_control_edges = subsurf['show_only_control_edges']
-                    subsurfMod.use_creases = subsurf['use_creases']
+                    subsurfMod.use_creases = subsurf['use_creases']                
 
             print(obj.name + " is cached!")
 
@@ -183,10 +242,7 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
         return {'FINISHED'}
 
 def menu_func(self, context):
-    op = self.layout.operator('duvertexcache.create_vertex_cache', icon = 'PACKAGE')
-    op.activeObjectOnly = False
-    op.apply_subsurf = False
-    op.world_space = True
+    self.layout.operator('duvertexcache.create_vertex_cache', icon = 'PACKAGE')
 
 classes = (
     DUVERTEXCACHE_OT_create_vertex_cache,
