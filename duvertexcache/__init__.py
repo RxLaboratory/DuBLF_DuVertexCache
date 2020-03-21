@@ -88,9 +88,6 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
 
     @classmethod
     def poll(self, context):
-        # temporarily enable pc2 addon if not enabled yet
-        if not dublf.DuBLF_addons.is_addon_enabled('io_export_pc2'):
-            return False
         obj = context.active_object
         return (
             obj is not None
@@ -112,6 +109,14 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
         col.prop(self, 'export_only')
 
     def execute( self, context ):
+
+        if not dublf.DuBLF_addons.is_addon_enabled('io_export_pc2'):
+            bpy.ops.preferences.addon_enable(module="io_export_pc2")
+            
+        if not dublf.DuBLF_addons.is_addon_enabled('io_export_pc2'):
+            self.report({'ERROR'}, 'DuVertexCache needs the add-on \"Export Pointcache Format (pc2)\" to be activated.')
+            return {'CANCELLED'}
+
         print("\n___VERTEX CACHE___")
         # get object(s)
         objs = context.selected_objects
