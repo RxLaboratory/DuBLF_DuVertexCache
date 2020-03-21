@@ -28,6 +28,10 @@ def remove_keyframes_from_object(obj):
     :arg obj: The object
     :type onj : Object(ID)
     """
+    if obj.animation_data is None:
+        return
+    if obj.animation_data.action is None:
+        return
     for curve in obj.animation_data.action.fcurves:
         keyframes = curve.keyframe_points
         for keyframe in reversed(keyframes):
