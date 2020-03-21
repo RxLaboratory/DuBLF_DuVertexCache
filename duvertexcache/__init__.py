@@ -15,8 +15,8 @@ bl_info = {
     "name" : "DuVertexCache",
     "author" : "Nicolas 'Duduf' Dufresne",
     "blender" : (2, 82, 0),
-    "version" : (0, 0, 1),
-    "location" : "3D View > Object > Animation menu > Create Vertex Cache",
+    "version" : (0, 1, 0),
+    "location" : "3D View > Object Menu > Animation > Create Vertex Cache",
     "description" : "An easy tool to export vertex cache / simplify scene / re-import vertex cache.",
     #"warning" : "This addon needs the \"Export Pointcache Format (.pc2)\" to be activated",
     "category" : "Animation",
@@ -64,8 +64,7 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
     make_unique_data: bpy.props.BoolProperty(
         name="Make single-user data when needed",
         description="When applying non deform modifiers (which change vertex count), make single data if it is multi-user, or ignore this object",
-        default=False
-    )
+        default=False )
     apply_subsurf: bpy.props.BoolProperty(
         name="Apply Subdivision Surface",
         description="Applies the subdivision before exporting cache, instead of keeping the modifier",
@@ -135,10 +134,7 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
             self.report({'ERROR'}, 'Cannot create directory for Vertex Cache at "' + cache_dir + '"')
             print('Cannot create directory for Vertex Cache at "' + cache_dir + '"')
             return {'CANCELLED'}
-
-        # List armatures used by cached objects
-        armatures = []
-        
+       
         for obj in objs:
             if not obj.type in {'MESH', 'CURVE', 'SURFACE', 'FONT'}:
                 continue
@@ -147,8 +143,6 @@ class DUVERTEXCACHE_OT_create_vertex_cache ( bpy.types.Operator ):
             context_override['selected_objects'] = [obj]
             context_override['active_object'] = obj
             context_override['object'] = obj
-
-            saved_data = None
 
             # make local
             if not self.export_only or self.apply_subsurf:
