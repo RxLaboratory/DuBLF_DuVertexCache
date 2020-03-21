@@ -21,7 +21,7 @@ import bpy # pylint: disable=import-error
 
 # Modifiers tools and methods
 
-def collect_modifiers( obj, modifier_type = 'SUBSURF', remove = False):
+def collect_modifiers( obj, modifier_type = '', modifier_class='', post='NOTHING'):
     """
     Collects all modifiers of a given type from an object.
 
@@ -29,26 +29,56 @@ def collect_modifiers( obj, modifier_type = 'SUBSURF', remove = False):
     :type obj: Object(ID)
     :arg modifier_type: The type of modifier to get.
     :type modifier_type: enum in [‘DATA_TRANSFER’, ‘MESH_CACHE’, ‘MESH_SEQUENCE_CACHE’, ‘NORMAL_EDIT’, ‘WEIGHTED_NORMAL’, ‘UV_PROJECT’, ‘UV_WARP’, ‘VERTEX_WEIGHT_EDIT’, ‘VERTEX_WEIGHT_MIX’, ‘VERTEX_WEIGHT_PROXIMITY’, ‘ARRAY’, ‘BEVEL’, ‘BOOLEAN’, ‘BUILD’, ‘DECIMATE’, ‘EDGE_SPLIT’, ‘MASK’, ‘MIRROR’, ‘MULTIRES’, ‘REMESH’, ‘SCREW’, ‘SKIN’, ‘SOLIDIFY’, ‘SUBSURF’, ‘TRIANGULATE’, ‘WIREFRAME’, ‘WELD’, ‘ARMATURE’, ‘CAST’, ‘CURVE’, ‘DISPLACE’, ‘HOOK’, ‘LAPLACIANDEFORM’, ‘LATTICE’, ‘MESH_DEFORM’, ‘SHRINKWRAP’, ‘SIMPLE_DEFORM’, ‘SMOOTH’, ‘CORRECTIVE_SMOOTH’, ‘LAPLACIANSMOOTH’, ‘SURFACE_DEFORM’, ‘WARP’, ‘WAVE’, ‘CLOTH’, ‘COLLISION’, ‘DYNAMIC_PAINT’, ‘EXPLODE’, ‘OCEAN’, ‘PARTICLE_INSTANCE’, ‘PARTICLE_SYSTEM’, ‘FLUID’, ‘SOFT_BODY’, ‘SURFACE’]
-    :arg remove: Removes the collected modifier from the object
-    :type remove: bool
+    :arg modifier_class: The class of modifiers to get
+    :type modifier_class: enum in ['MODIFY', 'DEFORM', 'GENERATE', 'SIMULATE']
+    :arg post: What to do after collecting the modifier: nothing, apply it, remove it
+    :type repostmove: enum in ['NOTHING', 'APPLY', 'REMOVE']
     :return: The list of modifiers.
-    :rtype: Modifier[] if remove is False, dict[] if remove is True, each dict containing a copy of the origianl Modifier attributes
+    :rtype: Modifier[] if post is 'NOTHING', dict[] otherwise, each dict containing a copy of the origianl Modifier attributes
     """
     # Collect and remove
     modifiers = []
     for mod in reversed(obj.modifiers):
-        if mod.type == modifier_type:
-            if remove:
+        if mod.type == modifier_type or modifier_type == '':
+            # Check class
+            if modifier_class == 'MODIFY' and not mod.type in DUBLF_Modifiers.modify_modifiers:
+                continue
+            if modifier_class == 'DEFORM' and not mod.type in DUBLF_Modifiers.deform_modifiers:
+                continue
+            if modifier_class == 'GENERATE' and not mod.type in DUBLF_Modifiers.generate_modifiers:
+                continue
+            if modifier_class == 'SIMULATE' and not mod.type in DUBLF_Modifiers.simulate_modifiers:
+                continue
+            if post == 'REMOVE' or post == 'APLLY':
                 backupMod = {}
                 for attr in dir(mod):
                     backupMod[attr] = getattr(mod, attr)
                 modifiers.append(backupMod)
-                obj.modifiers.remove(mod)
+                if post == 'REMOVE': obj.modifiers.remove(mod)
+                elif post == 'APPLY':
+                    oc = bpy.context.copy()
+                    oc['object'] = obj
+                    oc['active_object'] = obj
+                    bpy.ops.object.modifier_apply(oc, modifier=mod.name)
             else:
                 modifiers.append(mod)
     return modifiers
 
-def remove_all_modifiers(obj, modifier_type=''):
+def has_non_deform_modifiers(obj):
+    """
+    Checks if the object has modifiers which change vertex count/data (cannot be applied as shape key)
+
+    :arg obj: The object to get the modifiers from.
+    :type obj: Object(ID)
+    """
+
+    for mod in obj.modifiers:
+        t = mod.type
+        if t in DUBLF_Modifiers.modify_modifiers or t in DUBLF_Modifiers.generate_modifiers or t in DUBLF_Modifiers.simulate_modifiers:
+            return True
+        return False
+
+def remove_all_modifiers(obj, modifier_type='', modifier_class=''):
         """
 	    Removes all modifiers from an object.
 	
@@ -56,11 +86,94 @@ def remove_all_modifiers(obj, modifier_type=''):
 	    :type obj: Object(ID)
 	    :arg modifier_type: The type of modifier to remove. All of them if ''
 	    :type modifier_type: enum in [‘DATA_TRANSFER’, ‘MESH_CACHE’, ‘MESH_SEQUENCE_CACHE’, ‘NORMAL_EDIT’, ‘WEIGHTED_NORMAL’, ‘UV_PROJECT’, ‘UV_WARP’, ‘VERTEX_WEIGHT_EDIT’, ‘VERTEX_WEIGHT_MIX’, ‘VERTEX_WEIGHT_PROXIMITY’, ‘ARRAY’, ‘BEVEL’, ‘BOOLEAN’, ‘BUILD’, ‘DECIMATE’, ‘EDGE_SPLIT’, ‘MASK’, ‘MIRROR’, ‘MULTIRES’, ‘REMESH’, ‘SCREW’, ‘SKIN’, ‘SOLIDIFY’, ‘SUBSURF’, ‘TRIANGULATE’, ‘WIREFRAME’, ‘WELD’, ‘ARMATURE’, ‘CAST’, ‘CURVE’, ‘DISPLACE’, ‘HOOK’, ‘LAPLACIANDEFORM’, ‘LATTICE’, ‘MESH_DEFORM’, ‘SHRINKWRAP’, ‘SIMPLE_DEFORM’, ‘SMOOTH’, ‘CORRECTIVE_SMOOTH’, ‘LAPLACIANSMOOTH’, ‘SURFACE_DEFORM’, ‘WARP’, ‘WAVE’, ‘CLOTH’, ‘COLLISION’, ‘DYNAMIC_PAINT’, ‘EXPLODE’, ‘OCEAN’, ‘PARTICLE_INSTANCE’, ‘PARTICLE_SYSTEM’, ‘FLUID’, ‘SOFT_BODY’, ‘SURFACE’]
-	    """
+	    :arg modifier_class: The class of modifiers to get
+        :type modifier_class: enum in ['MODIFY', 'DEFORM', 'GENERATE', 'SIMULATE']
+        """
         for mod in reversed(obj.modifiers):
             if modifier_type == '' or modifier_type == mod.type:
-                obj.modifiers.remove( mod )
-  
+                # Check class
+                if modifier_class == 'MODIFY' and not mod.type in DUBLF_Modifiers.modify_modifiers:
+                    continue
+                if modifier_class == 'DEFORM' and not mod.type in DUBLF_Modifiers.deform_modifiers:
+                    continue
+                if modifier_class == 'GENERATE' and not mod.type in DUBLF_Modifiers.generate_modifiers:
+                    continue
+                if modifier_class == 'SIMULATE' and not mod.type in DUBLF_Modifiers.simulate_modifiers:
+                    continue
+                if obj.library is None:
+                    obj.modifiers.remove( mod )
+                else:
+                    mod.show_viewport = False
+                    mod.show_render = False
+
+class DUBLF_Modifiers():
+    """Tools to manage modifiers"""
+
+    modify_modifiers = [
+        'DATA_TRANSFER',
+        'MESH_CACHE',
+        'MESH_SEQUENCE_CACHE',
+        'NORMAL_EDIT',
+        'WEIGHTED_NORMAL',
+        'UV_PROJECT',
+        'UV_WARP',
+        'VERTEX_WEIGHT_EDIT',
+        'VERTEX_WEIGHT_MIX',
+        'VERTEX_WEIGHT_PROXIMITY'
+    ]
+
+    generate_modifiers = [
+        'ARRAY',
+        'BEVEL',
+        'BOOLEAN',
+        'BUILD',
+        'DECIMATE',
+        'EDGE_SPLIT',
+        'MASK',
+        'MIRROR',
+        'MULTIRES',
+        'REMESH',
+        'SCREW',
+        'SKIN',
+        'SOLIDIFY',
+        'SUBSURF',
+        'TRIANGULATE',
+        'WIREFRAME',
+        'WELD',
+    ]
+
+    deform_modifiers = [
+        'ARMATURE',
+        'CAST',
+        'CURVE',
+        'DISPLACE',
+        'HOOK',
+        'LAPLACIANDEFORM',
+        'LATTICE',
+        'MESH_DEFORM',
+        'SHRINKWRAP',
+        'SIMPLE_DEFORM',
+        'SMOOTH',
+        'CORRECTIVE_SMOOTH',
+        'LAPLACIANSMOOTH',
+        'SURFACE_DEFORM',
+        'WARP',
+        'WAVE',
+    ]
+
+    simulate_modifiers = [
+        'CLOTH',
+        'COLLISION',
+        'DYNAMIC_PAINT',
+        'EXPLODE',
+        'OCEAN',
+        'PARTICLE_INSTANCE',
+        'PARTICLE_SYSTEM',
+        'FLUID',
+        'SOFT_BODY',
+        'SURFACE'
+    ]
+
 class DUBLF_OT_modifiers_remove_all( bpy.types.Operator ):
     """Removes all modifiers from the active object"""
     bl_idname = "object.modifiers_remove_all"
